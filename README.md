@@ -58,8 +58,8 @@ f1-ideal-lap/
 ### 1. Clone and install dependencies
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/f1-ideal-lap.git
-cd f1-ideal-lap
+git clone https://github.com/YOUR_USERNAME/AI-RACELINE-OPTIMIZATION.git
+cd AI-RACELINE-OPTIMIZATION
 pip install -r requirements.txt
 ```
 
