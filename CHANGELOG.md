@@ -31,9 +31,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [Unreleased] — Phase 2 (planned)
+## [0.2.0] — 2026 (Phase 2 complete)
 
-- Per-driver vs ideal delta plot (time loss per corner)
-- Braking point deviation analysis
-- Throttle application point comparison
-- Corner-by-corner performance breakdown table
+### Added
+- `--driver` CLI flag to compare a specific driver against the ideal profile
+- `--no-cache` CLI flag to easily disable FastF1 caching
+- Per-driver vs ideal time delta trace plotting
+- Braking point deviation analysis per corner
+- Throttle application point comparison per corner
+- Detailed corner-by-corner performance breakdown table
+
+### Fixed
+- Replaced `np.trapz` with `np.trapezoid` for NumPy 2.0+ compatibility
+- Added dynamic corner overlap prevention for tight circuits (e.g., Monaco)
+- Handled missing sector times gracefully by falling back to track distance ratios
+- Fixed SciPy interpolation bounds by clamping to start/end telemetry values
+
+---
+
+## [Unreleased] — Phase 3 (planned)
+
+- Driver fingerprinting via metric learning
+- Latent representation extraction for driver style profiling

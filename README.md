@@ -37,7 +37,9 @@ f1-ideal-lap/
 ├── src/
 │   ├── telemetry.py         # Session loading, telemetry extraction, resampling
 │   ├── ideal_profile.py     # Ideal profile builder, corner detection, lap time estimation
-│   └── visualization.py     # All matplotlib plotting logic
+│   ├── visualization.py     # All matplotlib plotting logic
+│   ├── driver_analysis.py   # Phase 2: Driver vs ideal delta and deviation calculations
+│   └── driver_visualization.py # Phase 2: Driver comparison plotting logic
 │
 ├── tests/
 │   └── test_ideal_profile.py  # Unit tests (pytest)
@@ -84,8 +86,10 @@ python main.py --year 2023 --gp Silverstone --session R
 | `--gp` | `Bahrain` | Grand Prix name (FastF1 fuzzy matches) |
 | `--session` | `Q` | Session type: `Q`, `R`, `FP1`, `FP2`, `FP3` |
 | `--cache` | `cache` | Path to FastF1 cache directory |
+| `--no-cache` | `False` | Disable FastF1 caching (forces re-download) |
 | `--output` | `outputs/ideal_profile.png` | Output plot path |
 | `--n-points` | `3000` | Distance grid resolution |
+| `--driver` | `None` | Optional: Specify a driver (e.g., `VER`) to run a detailed Phase 2 comparison |
 
 ### 5. Run tests
 
@@ -120,9 +124,11 @@ Rather than comparing against a single "fast" driver (which encodes their specif
 | Dashboard visualisation | Done |
 | CLI interface | Done |
 | Unit tests | Done |
-| Driver comparison (delta plot) | Planned |
-| Driver style embedding (metric learning) | Planned |
-| Recommendation engine | Planned |
+| Driver comparison (delta plot) | Done (Phase 2) |
+| Braking / throttle deviations | Done (Phase 2) |
+| Corner performance breakdown | Done (Phase 2) |
+| Driver style embedding (metric learning) | Planned (Phase 3) |
+| Recommendation engine | Planned (Phase 4) |
 | Vision module (onboard video) | Future |
 
 ---
@@ -131,10 +137,10 @@ Rather than comparing against a single "fast" driver (which encodes their specif
 
 This project will evolve into a full **AI-based driver coaching system** with the following phases:
 
-- **Phase 1** *(current)* — Ideal lap profile + corner detection
-- **Phase 2** — Driver vs ideal comparison: per-corner time delta, braking point deviation, throttle application analysis
-- **Phase 3** — Driver fingerprinting via metric learning: learn a compact latent representation of each driver's style that generalises across tracks (contrastive learning / SupCon loss)
-- **Phase 4** — Style transfer: given a student driver's telemetry, generate what their lap would look like if they adopted the style of a reference driver
+- **Phase 1** *(Done)* — Ideal lap profile + corner detection
+- **Phase 2** *(Done)* — Driver vs ideal comparison: per-corner time delta, braking point deviation, throttle application analysis
+- **Phase 3** *(planned)* — Driver fingerprinting via metric learning: learn a compact latent representation of each driver's style that generalises across tracks (contrastive learning / SupCon loss)
+- **Phase 4** *(planned)* — Style transfer: given a student driver's telemetry, generate what their lap would look like if they adopted the style of a reference driver
 - **Phase 5** *(exploratory)* — Vision module: infer pseudo-telemetry from onboard video using optical flow and monocular depth
 
 ---
