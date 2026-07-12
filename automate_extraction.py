@@ -4,6 +4,7 @@ import fastf1
 import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
+from typing import List, Tuple, Dict, Any, Optional
 
 # Setup clean production-grade logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -25,10 +26,17 @@ class F1FeatureExtractor:
         self.target_points = target_points
         self.margin_pct = margin_pct
 
-    def extract_session_features(self, year: int, track: str, drivers: list = None) -> np.ndarray:
+    def extract_session_features(
+        self, year: int, track: str, drivers_list: Optional[List[str]] = None
+    ) -> Tuple[np.ndarray, List[Dict[str, Any]]]:
         """
         Dynamically finds, cleans, and extracts feature tensors from a single GP weekend
         following the priority rule: Qualifying > Race > FP3 > FP2 > FP1.
+
+        Returns:
+            Tuple containing:
+                - np.ndarray: A tensor of shape (N, target_points, 11)
+                - List[Dict]: Metadata list for each extracted lap to guarantee synchronization.
         """
         session_priority = ["Q", "R", "FP3", "FP2", "FP1"]
         session = None
@@ -51,14 +59,14 @@ class F1FeatureExtractor:
         logger.info(f"Successfully locked into [{chosen_type}] session for data extraction.")
 
         all_laps = session.laps
-        if drivers:
-            all_laps = all_laps.pick_drivers(drivers)
+        if drivers_list:
+            all_laps = all_laps.pick_drivers(drivers_list)
 
         clean_laps = all_laps.pick_quicklaps().dropna(subset=["LapTime"])
 
         if len(clean_laps) == 0:
             logger.error(f"No clean baseline laps found in {track} [{chosen_type}].")
-            return np.empty((0, self.target_points, 11))
+            return np.empty((0, self.target_points, 11)), []
 
         clean_laps = clean_laps.copy()
         clean_laps["LapTimeSeconds"] = clean_laps["LapTime"].dt.total_seconds()
@@ -70,7 +78,7 @@ class F1FeatureExtractor:
         logger.info(f"Pace Filtering: Selected {len(pace_laps)} out of {len(clean_laps)} laps (Cutoff: {max_pace_cutoff:.2f}s).")
 
         if len(pace_laps) == 0:
-            return np.empty((0, self.target_points, 11))
+            return np.empty((0, self.target_points, 11)), []
 
         fastest_lap = pace_laps.sort_values(by="LapTimeSeconds").iloc[0]
         ref_tel = fastest_lap.get_telemetry().add_distance()
@@ -78,6 +86,7 @@ class F1FeatureExtractor:
         
         target_distance_grid = np.linspace(0, max_track_distance, self.target_points)
         lap_tensors = []
+        lap_metadata_records = []
 
         for idx, lap in pace_laps.iterrows():
             try:
@@ -129,70 +138,135 @@ class F1FeatureExtractor:
                 ])
 
                 lap_tensors.append(lap_features)
+                
+                # Capture synchronized raw metadata indicators per successful lap array
+                lap_metadata_records.append({
+                    "Driver": str(lap["Driver"]),
+                    "DriverNumber": str(lap["DriverNumber"]),
+                    "Track": track,
+                    "Session": chosen_type,
+                    "LapTime": lap["LapTimeSeconds"]
+                })
 
             except Exception as e:
                 logger.debug(f"Skipping lap index {idx} due to calculation anomaly: {e}")
                 continue
 
         if not lap_tensors:
-            return np.empty((0, self.target_points, 11))
+            return np.empty((0, self.target_points, 11)), []
 
         session_tensor = np.stack(lap_tensors, axis=0)
-        return session_tensor
+        return session_tensor, lap_metadata_records
 
 
 def run_automated_pipeline():
-    # Define extraction parameters
+    # Define extraction parameters explicitly targetting the 'data' directory
     YEAR = 2025
     TRACKS_TO_EXTRACT = ["Bahrain", "Suzuka", "Silverstone", "Monaco", "Monza"]
-    OUTPUT_DIR = "outputs"
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    DATA_DIR = "data"
+    os.makedirs(DATA_DIR, exist_ok=True)
 
     extractor = F1FeatureExtractor(target_points=3000, margin_pct=1.03)
-    global_tensors = []
+    
+    global_tensors: List[np.ndarray] = []
+    global_metadata_raw: List[Dict[str, Any]] = []
+    
+    # Track global drivers discovered dynamically across the pipeline run to construct maps from scratch
+    discovered_drivers = set()
 
     print("=" * 60)
-    print(f"      STARTING AUTOMATED MULTI-RACE TELEMETRY EXTRACTION      ")
+    print(f"      STARTING AUTOMATED MULTI-RACE DATASET GENERATION        ")
     print("=" * 60)
 
     for track in TRACKS_TO_EXTRACT:
         print(f"\n🚀 Processing Track: {track.upper()}...")
         try:
-            # Extract data for this individual track
-            track_tensor = extractor.extract_session_features(year=YEAR, track=track)
+            # Synchronously extract features and internal structural records
+            track_tensor, track_meta = extractor.extract_session_features(year=YEAR, track=track)
             
             if track_tensor.shape[0] > 0:
                 logger.info(f"Successfully extracted {track_tensor.shape[0]} laps for {track}.")
                 global_tensors.append(track_tensor)
+                global_metadata_raw.extend(track_meta)
                 
-                # Optional: Save track-specific files along the way so you don't lose progress
-                track_output_path = os.path.join(OUTPUT_DIR, f"{track}_{YEAR}_features.npy")
+                # Update globally discovered driver tracking
+                for meta in track_meta:
+                    discovered_drivers.add((meta["Driver"], meta["DriverNumber"]))
+                
+                # Save track-specific arrays inside data/ folder
+                track_output_path = os.path.join(DATA_DIR, f"{track}_{YEAR}_features.npy")
                 np.save(track_output_path, track_tensor)
-                print(f"  ↳ Saved individual matrix to {track_output_path}")
+                print(f"  ↳ Saved individual circuit matrix to {track_output_path}")
             else:
-                logger.warning(f"No qualifying pace laps matched filtering for {track}. Skipping array merge.")
+                logger.warning(f"No pace laps matched filtering for {track}. Skipping tracking records.")
 
         except Exception as e:
             logger.error(f"Failed processing {track} entirely due to an unhandled error: {e}")
             print("Moving to next track in list...")
             continue
 
-    # --- Global Matrix Consolidation ---
+    # --- Global Mapping & Consolidation Engine ---
     print("\n" + "=" * 60)
-    print("      CONSOLIDATING COMPYLED TELEMETRY DATASETS      ")
+    print("      CONSOLIDATING COMPYLED TELEMETRY DATASETS & LABELS      ")
     print("=" * 60)
 
-    if global_tensors:
-        # Stack individual 3D arrays seamlessly across the Lap Axis (axis=0)
-        master_dataset = np.concatenate(global_tensors, axis=0)
+    if global_tensors and global_metadata_raw:
+        # 1. Finalize Deterministic Label Encodings from Scratch (Ordered Alphabetically by Driver Code)
+        sorted_drivers = sorted(list(discovered_drivers), key=lambda x: x[0])
         
-        master_output_path = os.path.join(OUTPUT_DIR, f"master_dataset_{YEAR}_laps.npy")
+        driver_to_label: Dict[str, int] = {item[0]: idx for idx, item in enumerate(sorted_drivers)}
+        
+        # Save label_mapping.csv
+        mapping_rows = [{"Driver": d[0], "DriverNumber": d[1], "Label": driver_to_label[d[0]]} for d in sorted_drivers]
+        df_mapping = pd.DataFrame(mapping_rows)
+        mapping_output_path = os.path.join(DATA_DIR, "label_mapping.csv")
+        df_mapping.to_csv(mapping_output_path, index=False)
+        print(f"📁 Saved Label Mappings to: {mapping_output_path}")
+
+        # 2. Process Categorization Labels and Metadata Indices Synchronously
+        final_labels: List[int] = []
+        final_metadata_rows: List[Dict[str, Any]] = []
+        
+        for lap_idx, meta in enumerate(global_metadata_raw):
+            lbl = driver_to_label[meta["Driver"]]
+            final_labels.append(lbl)
+            
+            # Combine raw indicators with synchronized structural labels and array index reference
+            final_metadata_rows.append({
+                "Driver": meta["Driver"],
+                "DriverNumber": meta["DriverNumber"],
+                "Label": lbl,
+                "Track": meta["Track"],
+                "Session": meta["Session"],
+                "LapTime": meta["LapTime"],
+                "LapIndex": lap_idx
+            })
+
+        # 3. Stack and Save 3D Feature Matrix Tensors
+        master_dataset = np.concatenate(global_tensors, axis=0)
+        master_output_path = os.path.join(DATA_DIR, f"master_dataset_{YEAR}_laps.npy")
         np.save(master_output_path, master_dataset)
         
-        print(f"\n🎉 SUCCESS! Full dataset successfully built.")
-        print(f"📁 Combined Output Saved to: {master_output_path}")
-        print(f"📊 Final Master Array Structural Shape: {master_dataset.shape}")
-        print(f"   Interpretation: {master_dataset.shape[0]} total elite laps across all circuits.")
+        # 4. Save Vectorized Integer Target Array
+        labels_array = np.array(final_labels, dtype=np.int32)
+        labels_output_path = os.path.join(DATA_DIR, "driver_labels.npy")
+        np.save(labels_output_path, labels_array)
+        
+        # 5. Save Structured Metadata Reference Frame
+        df_metadata = pd.DataFrame(final_metadata_rows)
+        metadata_output_path = os.path.join(DATA_DIR, "metadata.csv")
+        df_metadata.to_csv(metadata_output_path, index=False)
+
+        print(f"\n🎉 SUCCESS! Entire pipeline dataset rebuilt cleanly from scratch.")
+        print(f"📁 Master Feature Tensor Saved to: {master_output_path} -> Structural Shape: {master_dataset.shape}")
+        print(f"📁 Vector Labels Saved to        : {labels_output_path} -> Array Shape: {labels_array.shape}")
+        print(f"📁 Track Synchronized CSV Saved to: {metadata_output_path} -> Dimensions: {df_metadata.shape}")
+        
+        # Guardrail Validation Test Verification
+        assert master_dataset.shape[0] == labels_array.shape[0] == len(df_metadata), \
+            "Critical Alignment Exception: Synchronization mismatch across saved pipeline file dimensions."
+        logger.info("Pipeline Alignment Check Passed: Array shapes and tracking indexes match flawlessly.")
+        
     else:
         logger.error("No valid telemetry structures could be extracted from any listed circuits.")
 
