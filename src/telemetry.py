@@ -109,6 +109,10 @@ def get_sector_distances(fastest_lap: pd.Series) -> tuple[float, float]:
     (sector1_end_m, sector2_end_m)
     """
     tel = fastest_lap.get_telemetry()
+    if pd.isna(fastest_lap.get("Sector1Time")) or pd.isna(fastest_lap.get("Sector2Time")):
+        # Fallback if sector times are missing
+        return float(tel["Distance"].max() / 3), float(tel["Distance"].max() * 2 / 3)
+
     s1_time = fastest_lap["Sector1Time"]
     s2_time = fastest_lap["Sector1Time"] + fastest_lap["Sector2Time"]
 
@@ -140,9 +144,10 @@ def resample_telemetry(
         'speed'          : np.ndarray shape (n_laps, n_points)
         'throttle'       : np.ndarray shape (n_laps, n_points)
         'brake'          : np.ndarray shape (n_laps, n_points)
+        'lap_ids'        : list of length n_laps
     """
     grid = np.linspace(0, reference_length, n_points)
-    speeds, throttles, brakes = [], [], []
+    speeds, throttles, brakes, lap_ids_out = [], [], [], []
 
     for lap_id in telemetry_df["Lap"].unique():
         lap_df = (
@@ -157,15 +162,16 @@ def resample_telemetry(
 
         try:
             f_spd = interp1d(lap_df["Distance"], lap_df["Speed"],
-                             fill_value="extrapolate", bounds_error=False)
+                             fill_value=(lap_df["Speed"].iloc[0], lap_df["Speed"].iloc[-1]), bounds_error=False)
             f_thr = interp1d(lap_df["Distance"], lap_df["Throttle"],
-                             fill_value="extrapolate", bounds_error=False)
+                             fill_value=(lap_df["Throttle"].iloc[0], lap_df["Throttle"].iloc[-1]), bounds_error=False)
             f_brk = interp1d(lap_df["Distance"], lap_df["Brake"],
-                             fill_value="extrapolate", bounds_error=False)
+                             fill_value=(lap_df["Brake"].iloc[0], lap_df["Brake"].iloc[-1]), bounds_error=False)
 
             speeds.append(f_spd(grid))
             throttles.append(f_thr(grid))
             brakes.append(f_brk(grid))
+            lap_ids_out.append(lap_id)
 
         except Exception as exc:
             print(f"  [warn] Interpolation failed for lap {lap_id}: {exc}")
@@ -178,4 +184,5 @@ def resample_telemetry(
         "speed":         np.array(speeds),
         "throttle":      np.array(throttles),
         "brake":         np.array(brakes),
+        "lap_ids":       lap_ids_out,
     }

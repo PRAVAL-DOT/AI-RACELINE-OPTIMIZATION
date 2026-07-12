@@ -17,7 +17,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 import telemetry as tel_mod
 import ideal_profile as ip_mod
 import visualization as viz_mod
-import feature_engineering as fe_mod
+import driver_analysis as da_mod
+import driver_visualization as dv_mod
 
 # Setup clean logging configuration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -30,7 +31,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--year",     type=int, default=2025)
     parser.add_argument("--gp",       type=str, default="Bahrain")
+    parser.add_argument("--session",  type=str, default="Q")
     parser.add_argument("--cache",    type=str, default="cache")
+    parser.add_argument("--no-cache", action="store_true", help="Disable FastF1 caching")
+    parser.add_argument("--driver",   type=str, default=None, help="Driver to compare against ideal (e.g. VER)")
     parser.add_argument("--output",   type=str, default=None)
     parser.add_argument("--n-points", type=int, default=3000)
     parser.add_argument("--margin",   type=float, default=1.03)  # 3% pace threshold
@@ -56,11 +60,14 @@ def main() -> None:
 
     # ── 1. Cache Setup + Dynamic Session Selection ────────────────
     print("\n[1/7] Loading session with priority cascade (Q -> R -> Practice)...")
-    tel_mod.enable_cache(args.cache)
+    if not args.no_cache:
+        tel_mod.enable_cache(args.cache)
+    else:
+        print("  (Caching disabled)")
     
     session = None
     chosen_session_type = None
-    session_priority = ["Q", "R", "FP3", "FP2", "FP1"]
+    session_priority = [args.session] + [s for s in ["Q", "R", "FP3", "FP2", "FP1"] if s != args.session]
 
     for s_type in session_priority:
         try:
@@ -152,24 +159,7 @@ def main() -> None:
     print(f"  Actual    : {ip_mod.fmt_time(fastest_lap['LapTimeSeconds'])}  ({fastest_lap['Driver']})")
     print("=" * 45)
 
-    # ── 6. Feature Engineering & 3D Matrix Export ─────────────
-    print("\n[6/7] Computing deep learning features and building 3D tensor...")
-    features = fe_mod.compute_features(resampled)
 
-    corner_ids = fe_mod.assign_corner_ids(grid, corners)
-    corner_phase = fe_mod.assign_corner_phase(grid, corners)
-    
-    feature_tensor = fe_mod.build_feature_tensor(
-        features,
-        corner_ids,
-        corner_phase,
-    )
-    print(f"  ✓ Multi-channel feature array compiled. Tensor shape: {feature_tensor.shape}")
-
-    # Export binary array matrix to disk
-    tensor_output_path = args.output.replace(".png", "_features.npy")
-    np.save(tensor_output_path, feature_tensor)
-    print(f"  ✓ Array binary saved to target disk location → {tensor_output_path}")
 
     # ── 7. Render Visualization Dashboard ─────────────────────
     print(f"\n[7/7] Plotting analytical performance dashboard → {args.output}")
@@ -194,6 +184,35 @@ def main() -> None:
         gp            = args.gp,
         save_path     = args.output,
     )
+
+    if args.driver is not None:
+        print(f"\n[8/8] Phase 2: Analyzing driver {args.driver}...")
+        driver_laps = pace_laps[pace_laps["Driver"] == args.driver]
+        if driver_laps.empty:
+            print(f"  [warn] Driver {args.driver} not found in pace laps. Skipping comparison.")
+        else:
+            drv_lap_id = driver_laps.index[0]
+            if drv_lap_id in resampled["lap_ids"]:
+                drv_idx = resampled["lap_ids"].index(drv_lap_id)
+                drv_speed = resampled["speed"][drv_idx]
+                drv_throttle = resampled["throttle"][drv_idx]
+                drv_brake = resampled["brake"][drv_idx]
+                
+                # Analysis
+                delta_trace = da_mod.compute_time_delta(drv_speed, ideal_profile["speed"], grid)
+                corner_analysis = da_mod.analyze_corners(
+                    drv_speed, drv_throttle, drv_brake,
+                    ideal_profile, grid, corners
+                )
+                
+                comp_save_path = os.path.join("outputs", f"{args.gp}_{args.year}_{args.driver}_comparison.png")
+                dv_mod.plot_driver_comparison(
+                    grid, ideal_profile, drv_speed, delta_trace, corner_analysis,
+                    corners, sector_bounds, grid[s1_end_idx], grid[s2_end_idx],
+                    args.driver, comp_save_path
+                )
+            else:
+                print(f"  [warn] Telemetry for {args.driver} was dropped during resampling.")
 
     print("\nPipeline execution complete. Ready for model ingest.")
 

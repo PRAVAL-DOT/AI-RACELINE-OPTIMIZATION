@@ -35,6 +35,13 @@ def build_ideal_profile(resampled: dict, smooth_sigma: float = 2.0) -> dict:
     ideal_throttle = np.percentile(resampled["throttle"], 90, axis=0)
     ideal_brake    = np.mean(resampled["brake"],              axis=0)
 
+    if smooth_sigma <= 0:
+        return {
+            "speed":    ideal_speed,
+            "throttle": ideal_throttle,
+            "brake":    ideal_brake,
+        }
+
     return {
         "speed":    gaussian_filter1d(ideal_speed,    sigma=smooth_sigma),
         "throttle": gaussian_filter1d(ideal_throttle, sigma=smooth_sigma),
@@ -121,6 +128,14 @@ def detect_corners(
             "apex_speed": float(apex_speed),
         })
 
+    # Sort corners by distance and prevent overlaps
+    corners = sorted(corners, key=lambda x: x["apex_dist"])
+    for i in range(len(corners) - 1):
+        if corners[i]["exit_dist"] > corners[i+1]["entry_dist"]:
+            midpoint = (corners[i]["exit_dist"] + corners[i+1]["entry_dist"]) / 2.0
+            corners[i]["exit_dist"] = midpoint
+            corners[i+1]["entry_dist"] = midpoint
+
     return corners
 
 
@@ -141,9 +156,9 @@ def estimate_sector_time(speed_kmh: np.ndarray, dist_m: np.ndarray) -> float:
     Estimated sector time in seconds.
     """
     speed_ms = np.clip(speed_kmh / 3.6, 1.0, None)  # avoid div/0
-    ds = np.diff(dist_m)
-    dt = ds / speed_ms[:-1]
-    return float(np.sum(dt))
+    # Use Trapezoidal rule for more accurate integration: dt = ds / v
+    t = np.trapezoid(1.0 / speed_ms, dist_m)
+    return float(t)
 
 
 def compute_lap_times(
