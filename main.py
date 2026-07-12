@@ -19,7 +19,6 @@ import ideal_profile as ip_mod
 import visualization as viz_mod
 import driver_analysis as da_mod
 import driver_visualization as dv_mod
-import feature_engineering as fe_mod
 
 # Setup clean logging configuration
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -160,24 +159,7 @@ def main() -> None:
     print(f"  Actual    : {ip_mod.fmt_time(fastest_lap['LapTimeSeconds'])}  ({fastest_lap['Driver']})")
     print("=" * 45)
 
-    # ── 6. Feature Engineering & 3D Matrix Export ─────────────
-    print("\n[6/7] Computing deep learning features and building 3D tensor...")
-    features = fe_mod.compute_features(resampled)
 
-    corner_ids = fe_mod.assign_corner_ids(grid, corners)
-    corner_phase = fe_mod.assign_corner_phase(grid, corners)
-    
-    feature_tensor = fe_mod.build_feature_tensor(
-        features,
-        corner_ids,
-        corner_phase,
-    )
-    print(f"  ✓ Multi-channel feature array compiled. Tensor shape: {feature_tensor.shape}")
-
-    # Export binary array matrix to disk
-    tensor_output_path = args.output.replace(".png", "_features.npy")
-    np.save(tensor_output_path, feature_tensor)
-    print(f"  ✓ Array binary saved to target disk location → {tensor_output_path}")
 
     # ── 7. Render Visualization Dashboard ─────────────────────
     print(f"\n[7/7] Plotting analytical performance dashboard → {args.output}")

@@ -50,9 +50,12 @@ def analyze_corners(
         exit_idx  = int(np.argmin(np.abs(distance_grid - c["exit_dist"])))
         
         # 1. Time Loss
-        drv_time = estimate_sector_time(driver_speed[entry_idx:exit_idx+1], distance_grid[entry_idx:exit_idx+1])
-        idl_time = estimate_sector_time(ideal_speed[entry_idx:exit_idx+1], distance_grid[entry_idx:exit_idx+1])
-        time_loss = drv_time - idl_time
+        if (exit_idx - entry_idx) >= 1:
+            drv_time = estimate_sector_time(driver_speed[entry_idx:exit_idx+1], distance_grid[entry_idx:exit_idx+1])
+            idl_time = estimate_sector_time(ideal_speed[entry_idx:exit_idx+1], distance_grid[entry_idx:exit_idx+1])
+            time_loss = drv_time - idl_time
+        else:
+            time_loss = np.nan
         
         # 2. Braking Point Deviation
         # Look for first point where brake > 0.05 between entry and apex

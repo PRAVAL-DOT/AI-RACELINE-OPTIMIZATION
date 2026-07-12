@@ -109,7 +109,7 @@ def plot_driver_comparison(
         ax_table.axhspan(y_pos - row_h/2, y_pos + row_h/2, xmin=x_offset, xmax=x_offset+0.45, color=bg_col, alpha=0.5)
         
         c_num = str(res["num"])
-        t_loss = f"{res['time_loss']:.3f}" if res['time_loss'] is not np.nan else "N/A"
+        t_loss = f"{res['time_loss']:.3f}" if not np.isnan(res['time_loss']) else "N/A"
         b_dev = f"{res['brake_deviation']:.1f}" if not np.isnan(res['brake_deviation']) else "N/A"
         t_dev = f"{res['throttle_deviation']:.1f}" if not np.isnan(res['throttle_deviation']) else "N/A"
         

@@ -35,6 +35,13 @@ def build_ideal_profile(resampled: dict, smooth_sigma: float = 2.0) -> dict:
     ideal_throttle = np.percentile(resampled["throttle"], 90, axis=0)
     ideal_brake    = np.mean(resampled["brake"],              axis=0)
 
+    if smooth_sigma <= 0:
+        return {
+            "speed":    ideal_speed,
+            "throttle": ideal_throttle,
+            "brake":    ideal_brake,
+        }
+
     return {
         "speed":    gaussian_filter1d(ideal_speed,    sigma=smooth_sigma),
         "throttle": gaussian_filter1d(ideal_throttle, sigma=smooth_sigma),
